@@ -1,0 +1,72 @@
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1d1a 0%, #101c2e 100%);
+            color: #00ff00;
+            font-family: 'Share Tech Mono', monospace;
+        }
+        header {
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px 0 10px 0;
+            border-bottom: 2px solid #00ff00;
+            box-shadow: 0 4px 16px #000a;
+        }
+        nav {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+        }
+        nav a {
+            color: #00ff00;
+            text-decoration: none;
+            font-size: 1.3em;
+            font-weight: bold;
+            position: relative;
+            transition: color 0.3s;
+        }
+        nav a::after {
+            content: '';
+            display: block;
+            width: 0;
+            height: 2px;
+            background: #00ff00;
+            transition: width .3s;
+            position: absolute;
+            left: 0;
+            bottom: -2px;
+        }
+        nav a:hover {
+            color: #fff;
+        }
+        nav a:hover::after {
+            width: 100%;
+        }
+
+        .center-section {
+            min-height: 75vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .center-text {
+            font-size: 2.5em;
+            text-shadow: 0 0 10px #00ff00, 0 0 20px #000;
+            letter-spacing: 2px;
+            animation: hackerText 2s infinite alternate;
+        }
+        @keyframes hackerText {
+            0% {text-shadow: 0 0 10px #00ff00, 0 0 20px #000;}
+            100% {text-shadow: 0 0 25px #00ff00, 0 0 30px #222;}
+        }
+        footer {
+            text-align: center;
+            padding: 18px 0;
+            background: #0d0f0e;
+            color: #00ff00;
+            font-size: 1em;
+            border-top: 2px solid #00ff00;
+            letter-spacing: 1px;
+            margin-top: 30px;
+        }

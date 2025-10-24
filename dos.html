@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DOS Attack Controls</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1d1a 0%, #101c2e 100%);
+            color: #00ff00;
+            font-family: 'Share Tech Mono', monospace;
+        }
+        .container {
+            max-width: 500px;
+            margin: 80px auto;
+            background: rgba(20, 30, 20, 0.96);
+            border-radius: 16px;
+            box-shadow: 0 0 30px #00ff0050;
+            padding: 36px 28px;
+        }
+        h2 {
+            text-align: center;
+            font-size: 2.2em;
+            margin-bottom: 30px;
+            text-shadow: 0 0 15px #00ff00a0;
+            letter-spacing: 2px;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 28px;
+            gap: 18px;
+        }
+        label {
+            flex: 1;
+            font-size: 1.1em;
+        }
+        input[type="text"] {
+            flex: 2;
+            padding: 8px 10px;
+            border-radius: 7px;
+            border: 1px solid #00ff00;
+            background: #101c2e;
+            color: #00ff00;
+            font-size: 1em;
+            outline: none;
+        }
+        button {
+            flex: 1;
+            padding: 8px 0;
+            background: #00ff00;
+            color: #101c2e;
+            border: none;
+            border-radius: 7px;
+            font-size: 1em;
+            font-family: 'Share Tech Mono', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s, color 0.3s;
+            box-shadow: 0 0 8px #00ff0060;
+        }
+        button:hover {
+            background: #101c2e;
+            color: #00ff00;
+            box-shadow: 0 0 16px #00ff00a0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>DOS Attack Controls</h2>
+        <form>
+            <div class="row">
+                <label for="ipInput">IP Address</label>
+                <input type="text" id="ipInput" name="ipInput" placeholder="Enter IP Address">
+                <button type="button">IP</button>
+            </div>
+            <div class="row">
+                <label for="macInput">MAC Address</label>
+                <input type="text" id="macInput" name="macInput" placeholder="Enter MAC Address">
+                <button type="button">MAC</button>
+            </div>
+            <div class="row">
+                <label for="attackInput">Attack Type</label>
+                <input type="text" id="attackInput" name="attackInput" placeholder="Enter Attack Type">
+                <button type="button">Attack</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
