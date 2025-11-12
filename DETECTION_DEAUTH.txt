@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""
+flow_wifi_deauth_detector.py
+
+Detect deauthentication frames targeting FLOW_WIFI (BSSID) or its client (STATION) and log evidence.
+
+Usage:
+    sudo python3 flow_wifi_deauth_detector.py <monitor_iface> [--bssid BSSID] [--station MAC] [--pcap PATH]
+
+Example:
+    sudo python3 flow_wifi_deauth_detector.py wlan0 --bssid 48:88:79:C8:2F:21 --station D2:6B:85:E5:AC:C5 --pcap /tmp/flow_wifi_evidence.pcap
+"""
+
+import argparse
+import time
+import os
+import csv
+import logging
+from collections import defaultdict, deque
+from scapy.all import sniff, Dot11, Dot11Deauth, PcapWriter
+
+# --- Defaults taken from your dump ---
+DEFAULT_BSSID = "48:88:79:C8:2F:21"
+DEFAULT_STATION = "D2:6B:85:E5:AC:C5"
+
+# --- Detection tuning ---
+WINDOW_SECONDS = 5         # sliding window length in seconds
+SRC_THRESHOLD = 5          # alerts when a single source sends >= this many deauths within WINDOW_SECONDS
+TARGET_THRESHOLD = 8       # alerts when target (BSSID or Station) sees >= this many deauths in WINDOW_SECONDS
+
+def iso_ts(now=None):
+    if now is None:
+        now = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))
+
+def normalize_mac(mac):
+    if mac is None:
+        return None
+    return mac.upper()
+
+class DeauthDetector:
+    def __init__(self, iface, bssid=None, station=None, pcap_path="/tmp/flow_wifi_evidence.pcap", csv_path="/tmp/flow_wifi_events.csv", log_path="/tmp/flow_wifi_detector.log"):
+        self.iface = iface
+        self.bssid = normalize_mac(bssid) if bssid else None
+        self.station = normalize_mac(station) if station else None
+        self.pcap_path = pcap_path
+        self.csv_path = csv_path
+        self.log_path = log_path
+
+        # sliding windows per source and per target
+        self.src_windows = defaultdict(lambda: deque())
+        self.target_windows = defaultdict(lambda: deque())
+
+        # prepare pcap writer and csv
+        self.pw = PcapWriter(self.pcap_path, append=True, sync=True)
+        csv_exists = os.path.exists(self.csv_path)
+        self.csv_f = open(self.csv_path, "a", newline="")
+        self.csv_w = csv.writer(self.csv_f)
+        if not csv_exists:
+            self.csv_w.writerow(["ts_iso","ts","event","src","dst","bssid","src_count","target_count","note"])
+
+        logging.basicConfig(filename=self.log_path, level=logging.INFO, format="%(asctime)s %(message)s")
+        logging.info("Detector starting on iface=%s bssid=%s station=%s", self.iface, self.bssid, self.station)
+
+    def close(self):
+        try:
+            self.pw.close()
+        except Exception:
+            pass
+        try:
+            self.csv_f.close()
+        except Exception:
+            pass
+
+    def prune(self, q, now):
+        while q and (now - q[0]) > WINDOW_SECONDS:
+            q.popleft()
+
+    def record_event(self, event_type, src, dst, bssid, src_count, target_count, note=""):
+        now = time.time()
+        ts_iso = iso_ts(now)
+        self.csv_w.writerow([ts_iso, now, event_type, src, dst, bssid, src_count, target_count, note])
+        self.csv_f.flush()
+        logging.info("%s src=%s dst=%s bssid=%s src_count=%s target_count=%s note=%s", event_type, src, dst, bssid, src_count, target_count, note)
+
+    def alert(self, msg):
+        print(msg)
+        logging.warning(msg)
+
+    def handle_packet(self, pkt):
+        now = time.time()
+        # write to forensic pcap (best-effort)
+        try:
+            self.pw.write(pkt)
+        except Exception:
+            pass
+
+        # detect deauth frames (scapy Dot11Deauth or management subtype 12)
+        if pkt.haslayer(Dot11Deauth) or (pkt.haslayer(Dot11) and pkt.type == 0 and pkt.subtype == 12):
+            dot11 = pkt.getlayer(Dot11)
+            src = normalize_mac(dot11.addr2)
+            dst = normalize_mac(dot11.addr1)
+            bssid = normalize_mac(dot11.addr3) or (dst if dst else None)
+
+            # update windows
+            src_q = self.src_windows[src]
+            tgt_key = None
+            # consider both BSSID and station as targets for counting
+            if self.bssid and bssid == self.bssid:
+                tgt_key = f"BSSID:{bssid}"
+            if self.station and dst == self.station:
+                # prioritize station-specific key
+                tgt_key = f"STATION:{dst}"
+            if tgt_key is None:
+                # still count per-BSSID for general awareness
+                tgt_key = f"BSSID:{bssid}" if bssid else "BSSID:UNKNOWN"
+
+            src_q.append(now)
+            self.target_windows[tgt_key].append(now)
+
+            # prune old timestamps
+            self.prune(src_q, now)
+            self.prune(self.target_windows[tgt_key], now)
+
+            src_count = len(src_q)
+            tgt_count = len(self.target_windows[tgt_key])
+
+            line = f"[{time.strftime('%H:%M:%S')}] DEAUTH seen src={src} dst={dst} bssid={bssid} src_count={src_count} target_count={tgt_count}"
+            print(line)
+            self.record_event("deauth_seen", src, dst, bssid, src_count, tgt_count, "")
+
+            # alert conditions
+            # 1) if the source is flooding
+            if src_count >= SRC_THRESHOLD:
+                msg = f"!!! ALERT: deauth flood from {src} ({src_count} pkts in {WINDOW_SECONDS}s) targeting {tgt_key}"
+                self.alert(msg)
+                self.record_event("alert_src", src, dst, bssid, src_count, tgt_count, "src_threshold")
+
+            # 2) if the target (BSSID or station) is being hit hard
+            if tgt_count >= TARGET_THRESHOLD:
+                msg = f"!!! ALERT: heavy deauths targeting {tgt_key} ({tgt_count} pkts in {WINDOW_SECONDS}s)"
+                self.alert(msg)
+                self.record_event("alert_target", src, dst, bssid, src_count, tgt_count, "target_threshold")
+
+    def run(self):
+        print(f"Starting detector on iface={self.iface} watching BSSID={self.bssid} STATION={self.station}")
+        print("Forensic pcap ->", self.pcap_path)
+        print("CSV log ->", self.csv_path)
+        print("Console alerts + log ->", self.log_path)
+        print("Press Ctrl+C to stop.")
+        try:
+            sniff(iface=self.iface, prn=self.handle_packet, store=False)
+        except PermissionError:
+            print("Permission denied: run as root (sudo).")
+        except KeyboardInterrupt:
+            print("Stopping detector (user requested).")
+        finally:
+            self.close()
+
+def main():
+    parser = argparse.ArgumentParser(description="FLOW_WIFI deauth detector")
+    parser.add_argument("iface", help="monitor interface (must be in monitor mode)")
+    parser.add_argument("--bssid", default=DEFAULT_BSSID, help="target BSSID to prioritize (default from dump)")
+    parser.add_argument("--station", default=DEFAULT_STATION, help="target station/client to prioritize (default from dump)")
+    parser.add_argument("--pcap", default="/tmp/flow_wifi_evidence.pcap", help="pcap output path")
+    parser.add_argument("--csv", default="/tmp/flow_wifi_events.csv", help="csv events log path")
+    parser.add_argument("--log", default="/tmp/flow_wifi_detector.log", help="detector log path")
+    args = parser.parse_args()
+
+    # normalize MACs to uppercase
+    args.bssid = normalize_mac(args.bssid) if args.bssid else None
+    args.station = normalize_mac(args.station) if args.station else None
+
+    # brief pre-checks
+    if os.geteuid() != 0:
+        print("Please run as root (sudo). Exiting.")
+        return
+
+    detector = DeauthDetector(iface=args.iface, bssid=args.bssid, station=args.station,
+                              pcap_path=args.pcap, csv_path=args.csv, log_path=args.log)
+    detector.run()
+
+if __name__ == "__main__":
+    main()
